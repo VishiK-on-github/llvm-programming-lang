@@ -19,3 +19,6 @@ llvm-dis is used to convert bitcode to .ll format (IR):
 To generate native assembly code we can use clang:
 
 `clang++ -S test.ll`
+
+- llvm-as: converts human-readable IR to machine-level bitcode
+- llvm-dis: converts machine-level bitcode to human-readable IR
