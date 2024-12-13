@@ -3,7 +3,7 @@
  */
 
 #include <string>
-#include "EvaLLVM.h"
+#include "./src/EvaLLVM.h"
 
 int main(int argc, char const *argv[])
 {
