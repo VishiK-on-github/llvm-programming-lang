@@ -6,4 +6,4 @@ Parts of LLVM infrastructure are as follows:
 
 Command to compile with LLVM:
 
-clang++ -o output-filename `llvm-config -cxxflags --ldflags --system-libs --libs core` cpp-filename
+clang++ -o output-filename `llvm-config --cxxflags --ldflags --system-libs --libs core` cpp-filename
