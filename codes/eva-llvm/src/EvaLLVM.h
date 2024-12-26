@@ -14,7 +14,10 @@
 
 class EvaLLVM {
   public:
-    EvaLLVM() { moduleInit(); }
+    EvaLLVM() { 
+      moduleInit(); 
+      setupExternFunction();
+    }
 
     /*
     Executes a program
@@ -48,16 +51,45 @@ class EvaLLVM {
       // 2. compile the main body
       auto result = gen(/* ast */);
 
-      // cast to i32 to return from main
-      auto i32Result = builder->CreateIntCast(result, builder->getInt32Ty(), true);
-
-      builder->CreateRet(i32Result);
+      builder->CreateRet(builder->getInt32(0));
     }
 
     /*
       Main compile loop.
     */
-    llvm::Value* gen(/* exp */) { return builder->getInt32(42); }
+    llvm::Value* gen(/* exp */) { 
+      // return builder->getInt32(42);
+
+      // strings:
+      auto str = builder->CreateGlobalStringPtr("Hello, World !\n");
+
+      // call to the printf function.
+      auto printfFn = module->getFunction("printf");
+
+      // args:
+      std::vector<llvm::Value*> args{str};
+
+      return builder->CreateCall(printfFn, args);
+    }
+
+    /*
+      define external functions (from some other libraries)
+    */
+    void setupExternFunction() {
+      /*
+        printf takes char* as input argument
+        char* is alias for a byte which can
+        be represented as i8*
+      */
+      auto bytePtrTy = builder->getInt8Ty()->getPointerTo();
+
+      module->getOrInsertFunction("printf",
+      llvm::FunctionType::get(
+        /* return type */ builder->getInt32Ty(),
+        /* format arg */ bytePtrTy,
+        /* var arg */ true
+      ));
+    }
 
     /*
       creates a function prototype (defines function, not the body)
