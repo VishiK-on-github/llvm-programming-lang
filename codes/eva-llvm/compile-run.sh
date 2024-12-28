@@ -1,9 +1,9 @@
 # /bin/zsh
 # compile main file.
-clang++ -o eva-llvm `llvm-config --cxxflags --ldflags --system-libs --libs core` eva-llvm.cpp
+clang++ -o eva-llvm.o `llvm-config --cxxflags --ldflags --system-libs --libs core` eva-llvm.cpp
 
 # run main executable
-./eva-llvm
+./eva-llvm.o
 
 # execute generated IR.
 lli ./out.ll
