@@ -9,7 +9,7 @@ int main(int argc, char const *argv[])
 {
   // program to execute
   std::string program = R"(
-    (printf "Value: %d\n" 42)
+    (printf "Version: %d\n\n" VERSION)
   )";
 
   // compiler instance
