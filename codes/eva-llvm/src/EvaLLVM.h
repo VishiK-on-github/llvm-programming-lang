@@ -32,7 +32,6 @@ class EvaLLVM {
       auto ast = parser->parse(program);
 
       // 2. compile to LLVM IR
-      // compile(ast);
       compile(ast);
 
       // printing generated code.
@@ -51,7 +50,12 @@ class EvaLLVM {
     */
     void compile(const Exp& ast) {
       // 1. make main function
-      fn = createFunction("main", llvm::FunctionType::get(/* return type */ builder->getInt32Ty(), /* vararg */ false));
+      fn = createFunction("main",
+                          llvm::FunctionType::get(/* return type */ builder->getInt32Ty(),
+                                                  /* vararg */ false));
+
+      // global variables
+      createGlobalVar("VERSION", builder->getInt32(1));
 
       // 2. compile the main body
       auto result = gen(ast);
@@ -65,6 +69,18 @@ class EvaLLVM {
     llvm::Value* gen(const Exp& exp) { 
       
       switch (exp.type) {
+        // boolean
+        case ExpType::SYMBOL:
+          if (exp.string == "true" || exp.string == "false") {
+            return builder->getInt1(exp.string == "true" ? true : false);
+          } else {
+            // variables
+
+            // local variables
+
+            // global variables
+            return module->getNamedGlobal(exp.string)->getInitializer();
+          }
 
         // numbers
         case ExpType::NUMBER:
@@ -78,11 +94,6 @@ class EvaLLVM {
           return builder->CreateGlobalStringPtr(str);
         }
 
-        // symbols - variables, operators
-        case ExpType::SYMBOL:
-          // TODO: pending
-          return builder->getInt32(0);
-
         // lists
         case ExpType::LIST:
           auto tag = exp.list[0];
@@ -90,7 +101,15 @@ class EvaLLVM {
           if (tag.type == ExpType::SYMBOL) {
             auto op = tag.string;
 
-            if (op == "printf") {
+            if (op == "var") {
+              auto varName = exp.list[1].string;
+
+              auto init = gen(exp.list[2]);
+
+              return createGlobalVar(varName, (llvm::Constant*)init)->getInitializer();
+            }
+
+            else if (op == "printf") {
               auto printfFn = module->getFunction("printf");
 
               // args:
@@ -107,6 +126,19 @@ class EvaLLVM {
 
       // unreachable
       return builder->getInt32(0);
+    }
+
+    /*
+      Creates a global variable
+    */
+    llvm::GlobalVariable* createGlobalVar(const std::string& name, 
+                                          llvm::Constant* init) {
+      module->getOrInsertGlobal(name, init->getType());
+      auto variable = module->getNamedGlobal(name);
+      variable->setAlignment(llvm::MaybeAlign(4));
+      variable->setConstant(false);
+      variable->setInitializer(init);
+      return variable;
     }
 
     /*
