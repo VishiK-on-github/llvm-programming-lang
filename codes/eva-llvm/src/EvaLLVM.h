@@ -82,6 +82,9 @@ class EvaLLVM {
             auto value = env->lookup(varName);
 
             // TODO: local variables
+            if (auto localVar = llvm::dyn_cast<llvm::AllocaInst>(value)) {
+              return builder->CreateLoad(localVar->getAllocatedType(), localVar, varName.c_str());
+            }
 
             // global variables
             if (auto globalVar = llvm::dyn_cast<llvm::GlobalVariable>(value)) {
@@ -108,21 +111,53 @@ class EvaLLVM {
 
           if (tag.type == ExpType::SYMBOL) {
             auto op = tag.string;
-
+            
+            // variable decalration: (var a (+ b 1))
+            // typed version: (var (x number) 10)
+            // Note: locals are allocated on the stack
             if (op == "var") {
-              auto varName = exp.list[1].string;
+              auto varNameDec = exp.list[1];
+              auto varName = extractVarName(varNameDec);
 
+              // init
               auto init = gen(exp.list[2], env);
 
-              return createGlobalVar(varName, (llvm::Constant*)init)->getInitializer();
+              // variable type
+              auto varType = extractVarType(varNameDec);
+
+              // variable
+              auto varBinding = allocVar(varName, varType, env);
+
+              // setting variable value
+              return builder->CreateStore(init, varBinding);
+            }
+
+            // set: is used to update the value of a variable
+            else if (op == "set") {
+              // value
+              auto value = gen(exp.list[2], env);
+
+              // get the name of the variable to be updated
+              auto varName = exp.list[1].string;
+
+              // lookup where in the permissible env scope chain can
+              // we find the variable to be updated with
+              auto varBinding = env->lookup(varName);
+
+              // set the value
+              return builder->CreateStore(value, varBinding);
             }
 
             // blocks
+            // starts with the begin keyword (begin <block>)
             else if (op == "begin") {
+              auto blockEnv = std::make_shared<Environment>(
+                std::map<std::string, llvm::Value*>{}, env);
+
               llvm::Value* blockRes;
 
               for (auto i = 1; i < exp.list.size(); i++) {
-                blockRes = gen(exp.list[i], env);
+                blockRes = gen(exp.list[i], blockEnv);
               }
               return blockRes;
             }
@@ -145,6 +180,58 @@ class EvaLLVM {
 
       // unreachable
       return builder->getInt32(0);
+    }
+
+    /*
+      Extract the variable/param name from an 
+      assignment expression.
+      (var x 10) -> x
+      (var (x number) 10) -> x
+    */
+    std::string extractVarName(const Exp& exp) {
+      return exp.type == ExpType::LIST ? exp.list[0].string : exp.string;
+    }
+
+    /*
+      Extracts the variable/param type. i32 is default.
+      x -> i32
+      (x number) -> number
+    */
+    llvm::Type* extractVarType(const Exp& exp) {
+      return exp.type == ExpType::LIST ? getTypeFromString(exp.list[1].string) : builder->getInt32Ty();
+    }
+
+    /*
+      Infer the LLVM type from the string representation
+    */
+    llvm::Type* getTypeFromString(const std::string& type_) {
+      // number -> i32
+      if (type_ == "number") {
+        return builder->getInt32Ty();
+      }
+
+      // string ->i8*
+      if (type_ == "string") {
+        return builder->getInt8Ty()->getPointerTo();
+      }
+
+      // default:
+      return builder->getInt32Ty();
+    }
+
+    /*
+      Allocating a local variable on the stack.
+      results in alloca instruction.
+    */
+    llvm::Value* allocVar(const std::string& name, llvm::Type* type_, Env env) {
+      varsBuilder->SetInsertPoint(&fn->getEntryBlock());
+
+      auto varAlloc = varsBuilder->CreateAlloca(type_, 0, name.c_str());
+
+      // add to the env
+      env->define(name, varAlloc);
+
+      return varAlloc;
     }
 
     /*
@@ -244,6 +331,9 @@ class EvaLLVM {
 
       // make new builder for the module.
       builder = std::make_unique<llvm::IRBuilder<>>(*ctx);
+
+      // builder for variables.
+      varsBuilder = std::make_unique<llvm::IRBuilder<>>(*ctx);
     }
 
     /*
@@ -290,6 +380,11 @@ class EvaLLVM {
       TODO: add module info
     */
     std::unique_ptr<llvm::Module> module;
+
+    /*
+      TODO: add more info
+    */
+    std::unique_ptr<llvm::IRBuilder<>> varsBuilder;
 
     /*
       TODO: add IR builder info
