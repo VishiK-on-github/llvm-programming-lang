@@ -10,10 +10,15 @@ int main(int argc, char const *argv[])
   // program to execute
   std::string program = R"(
 
-    (var z 10)
-    (var a (* z 20))
+  (var x 10)
 
-    (printf "a == 200? : %d\n\n" (== a 200))  
+  (while (> x 0)
+    (begin
+      (set x (- x 1))
+      (printf "%d " x)
+    )
+  )
+
   )";
 
   // compiler instance
