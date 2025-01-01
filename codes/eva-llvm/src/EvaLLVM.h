@@ -145,6 +145,83 @@ class EvaLLVM {
             } else if (op == "<=") {
               GEN_BINARY_OP(CreateICmpULE, "tmpcmp");
             }
+
+            // branch instruction
+            // if (<condition> <then> <else>)
+            else if (op == "if") {
+              auto condition = gen(exp.list[1], env);
+
+              // blocks
+              auto thenBlock = createBB("then", fn);
+
+              // else, ifend blocks appended later
+              // to handle nested if-expressions
+              auto elseBlock = createBB("else");
+              auto ifEndBlock = createBB("ifend");
+
+              // condition branch
+              builder->CreateCondBr(condition, thenBlock, elseBlock);
+
+              // then branch
+              builder->SetInsertPoint(thenBlock);
+              auto thenRes = gen(exp.list[2], env);
+              builder->CreateBr(ifEndBlock);
+
+              // restoring the block to handle nested if-expression
+              // it is needed for the phi instruction
+              thenBlock = builder->GetInsertBlock();
+
+              // else branch
+              // append the block to the function now
+              fn->getBasicBlockList().push_back(elseBlock);
+              builder->SetInsertPoint(elseBlock);
+              auto elseRes = gen(exp.list[3], env);
+              builder->CreateBr(ifEndBlock);
+              
+              // restore the block for phi instruction
+              elseBlock = builder->GetInsertBlock();
+
+              // if-end block
+              fn->getBasicBlockList().push_back(ifEndBlock);
+              builder->SetInsertPoint(ifEndBlock);
+
+              // result of if expression
+              auto phi = builder->CreatePHI(thenRes->getType(), 2, "tmpif");
+
+              phi->addIncoming(thenRes, thenBlock);
+              phi->addIncoming(elseRes, elseBlock);
+
+              return phi;
+            }
+
+            // while loop
+            else if (op == "while") {
+              // condition
+              auto condBlock = createBB("cond", fn);
+              builder->CreateBr(condBlock);
+
+              // body
+              auto bodyBlock = createBB("body");
+              auto loopEndBlock = createBB("loopend");
+
+              // compile the condition
+              builder->SetInsertPoint(condBlock);
+              auto cond = gen(exp.list[1], env);
+
+              // condition branch
+              builder->CreateCondBr(cond, bodyBlock, loopEndBlock);
+
+              // body
+              fn->getBasicBlockList().push_back(bodyBlock);
+              builder->SetInsertPoint(bodyBlock);
+              gen(exp.list[2], env);
+              builder->CreateBr(condBlock);
+
+              fn->getBasicBlockList().push_back(loopEndBlock);
+              builder->SetInsertPoint(loopEndBlock);
+
+              return builder->getInt32(0);
+            }
             
             // variable declaration: (var a (+ b 1))
             // typed version: (var (x number) 10)
@@ -179,7 +256,9 @@ class EvaLLVM {
               auto varBinding = env->lookup(varName);
 
               // set the value
-              return builder->CreateStore(value, varBinding);
+              builder->CreateStore(value, varBinding);
+
+              return value;
             }
 
             // blocks
