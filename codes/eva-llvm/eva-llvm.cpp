@@ -9,18 +9,11 @@ int main(int argc, char const *argv[])
 {
   // program to execute
   std::string program = R"(
-    (var x 42)
 
-    (begin
-      (var (x string) "Hello")
-      (printf "X: %s\n\n" x))
+    (var z 10)
+    (var a (* z 20))
 
-    (printf "X: %d\n\n" x)
-
-    (set x 100)
-
-    (printf "X: %d\n\n" x)
-  
+    (printf "a == 200? : %d\n\n" (== a 200))  
   )";
 
   // compiler instance
