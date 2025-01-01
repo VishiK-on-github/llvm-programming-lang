@@ -20,6 +20,14 @@ using syntax::EvaParser;
 
 using Env = std::shared_ptr<Environment>;
 
+// Binary operation macro
+#define GEN_BINARY_OP(Op, varName)            \
+  do {                                        \
+      auto op1 = gen(exp.list[1], env);       \
+      auto op2 = gen(exp.list[2], env);       \
+      return builder->Op(op1, op2, varName);  \
+  } while(false)
+
 class EvaLLVM {
   public:
     EvaLLVM() : parser(std::make_unique<EvaParser>()) { 
@@ -112,7 +120,33 @@ class EvaLLVM {
           if (tag.type == ExpType::SYMBOL) {
             auto op = tag.string;
             
-            // variable decalration: (var a (+ b 1))
+            // math binary ops
+            if (op == "+") {
+              GEN_BINARY_OP(CreateAdd, "tmpadd");
+            } else if (op == "-") {
+              GEN_BINARY_OP(CreateSub, "tmpsub");
+            } else if (op == "*") {
+              GEN_BINARY_OP(CreateMul, "tmpmul");
+            } else if (op == "/") {
+              GEN_BINARY_OP(CreateSDiv, "tmpdiv");
+            }
+
+            // comparison ops: unsigned
+            else if (op == ">") {
+              GEN_BINARY_OP(CreateICmpUGT, "tmpcmp");
+            } else if (op == "<") {
+              GEN_BINARY_OP(CreateICmpULT, "tmpcmp");
+            } else if (op == "==") {
+              GEN_BINARY_OP(CreateICmpEQ, "tmpcmp");
+            } else if (op == "!=") {
+              GEN_BINARY_OP(CreateICmpNE, "tmpcmp");
+            } else if (op == ">=") {
+              GEN_BINARY_OP(CreateICmpUGE, "tmpcmp");
+            } else if (op == "<=") {
+              GEN_BINARY_OP(CreateICmpULE, "tmpcmp");
+            }
+            
+            // variable declaration: (var a (+ b 1))
             // typed version: (var (x number) 10)
             // Note: locals are allocated on the stack
             if (op == "var") {
