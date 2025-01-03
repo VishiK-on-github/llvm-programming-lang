@@ -10,8 +10,21 @@ int main(int argc, char const *argv[])
   // program to execute
   std::string program = R"(
 
-  (def square (x) (* x x))
-  (printf "square: %d\n\n" (square 2))
+  (class Point null
+    (begin
+
+      (var x 0)
+      (var y 0)
+
+      (def constructor (self x y)
+        (begin
+          (set (prop self x) x)
+          (set (prop self y) y)))
+
+      (def calc (self)
+        (+ (prop self x) (prop self y)))
+    )
+  )
 
   )";
 

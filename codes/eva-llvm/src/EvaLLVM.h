@@ -300,6 +300,10 @@ class EvaLLVM {
               return builder->CreateCall(printfFn, args);
             }
 
+            else if (op == "class") {
+              // TODO: implement classes
+            }
+
             // function calls
             else {
               auto callable = gen(exp.list[0], env);
