@@ -17,12 +17,13 @@ int main(int argc, char const *argv[])
       (var y 0)
 
       (def constructor (self x y)
-        (begin
-          (set (prop self x) x)
-          (set (prop self y) y)))
+        (begin 0))
+          // (set (prop self x) x)
+          // (set (prop self y) y)))
 
       (def calc (self)
-        (+ (prop self x) (prop self y)))
+        0)
+        // (+ (prop self x) (prop self y)))
     )
   )
 

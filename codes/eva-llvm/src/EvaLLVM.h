@@ -7,6 +7,7 @@
 #include <string>
 #include <iostream>
 #include <regex>
+#include <map>
 
 #include "llvm/IR/IRBuilder.h"
 #include "llvm/IR/LLVMContext.h"
@@ -19,6 +20,13 @@
 using syntax::EvaParser;
 
 using Env = std::shared_ptr<Environment>;
+
+struct ClassInfo {
+  llvm::StructType* cls;
+  llvm::StructType* parent;
+  std::map<std::string, llvm::Type*> fieldsMap;
+  std::map<std::string, llvm::Function*> methodsMap;
+};
 
 // Binary operation macro
 #define GEN_BINARY_OP(Op, varName)            \
@@ -238,6 +246,15 @@ class EvaLLVM {
             // typed version: (var (x number) 10)
             // Note: locals are allocated on the stack
             if (op == "var") {
+              
+              // we dont want to re initialize values during the class declaration
+              // as normal variables or overwrites due to var keyword.
+              // this is a special case for class fields, which are already defined
+              // during the class alocation.
+              if (cls != nullptr) {
+                return builder->getInt32(0);
+              }
+              
               auto varNameDec = exp.list[1];
               auto varName = extractVarName(varNameDec);
 
@@ -300,8 +317,41 @@ class EvaLLVM {
               return builder->CreateCall(printfFn, args);
             }
 
+            // class declaration
+            // Example:
+            // (class A <super> <body>)
             else if (op == "class") {
-              // TODO: implement classes
+              auto name = exp.list[1].string;
+
+              // getting the parent class name.
+              // if base class inherits parent class
+              auto parent = exp.list[2].string == "null" ? nullptr : getClassByName(exp.list[2].string);
+
+              // compiling the class.
+              cls = llvm::StructType::create(*ctx, name);
+
+              if (parent != nullptr) {
+                inheritClass(cls, parent);
+              } else {
+                // allocate info for new class.
+                classMap_[name] = {
+                  /* class */ cls,
+                  /* parent */ parent,
+                  /* fields */ {},
+                  /* methods */ {}};
+              }
+
+              // add fields and methods in the class into class info
+              buildClassInfo(cls, exp, env);
+
+              // compile the body
+              gen(exp.list[3], env);
+
+              // reset the class after compiling, so normal fns
+              // dont pick the class name prefix.
+              cls = nullptr;
+
+              return builder->getInt32(0);
             }
 
             // function calls
@@ -323,6 +373,97 @@ class EvaLLVM {
 
       // unreachable
       return builder->getInt32(0);
+    }
+
+    /*
+      Inherits parent class fields.
+    */
+    void inheritClass(llvm::StructType* cls, llvm::StructType* parent) {
+      // TODO:
+    }
+
+    /*
+      Extract fields and methods from a class expression.
+    */
+    void buildClassInfo(llvm::StructType* cls, const Exp& clsExp, Env env) {
+      auto className = clsExp.list[1].string;
+      auto classInfo = &classMap_[className];
+
+      // body block
+      auto body = clsExp.list[3];
+
+      for (auto i = 1; i < body.list.size(); i++) {
+        auto exp = body.list[i];
+
+        if (isVar(exp)) {
+
+          auto varNameDecl = exp.list[1];
+
+          auto fieldName = extractVarName(varNameDecl);
+          auto fieldTy = extractVarType(varNameDecl);
+
+          classInfo->fieldsMap[fieldName] = fieldTy;
+        } 
+        
+        else if (isDef(exp)) {
+          auto methodName = exp.list[1].string;
+          auto fnName = className + "_" + methodName;
+
+          classInfo->methodsMap[methodName] = createFunctionProto(fnName, extractFunctionType(exp), env);
+        }
+      }
+      
+      // create fields.
+      buildClassBody(cls);
+    }
+
+    /*
+      Builds class body using class info.
+    */
+    void buildClassBody(llvm::StructType* cls) {
+      std::string className{cls->getName().data()};
+
+      auto classInfo = &classMap_[className];
+
+      auto clsFields = std::vector<llvm::Type*>{};
+
+      // field types
+      for (const auto& fieldInfo : classInfo->fieldsMap) {
+        clsFields.push_back(fieldInfo.second);
+      }
+
+      cls->setBody(clsFields, /* packed */ false);
+
+      // methods:
+      // TODO: using vTables.
+      
+    }
+
+    /*
+      Tagged list
+    */
+    bool isTaggedList(const Exp& exp, const std::string& tag) {
+      return exp.type == ExpType::LIST && exp.list[0].type == ExpType::SYMBOL && 
+              exp.list[0].string == tag;
+    }
+
+    /*
+      to check if list is of variable assignment type.
+      (var ...)
+    */
+    bool isVar(const Exp& exp) { return isTaggedList(exp, "var"); }
+
+    /*
+      to check if list is of variable assignment type.
+      (def ...)
+    */
+    bool isDef(const Exp& exp) { return isTaggedList(exp, "def"); }
+
+    /*
+      Get a type struct using name.
+    */
+    llvm::StructType* getClassByName(const std::string& name) {
+      return llvm::StructType::getTypeByName(*ctx, name);
     }
 
     /*
@@ -382,8 +523,11 @@ class EvaLLVM {
       std::vector<llvm::Type*> paramTypes{};
 
       for (auto& param : params.list) {
+        auto paramName = extractVarName(param);
         auto paramTy = extractVarType(param);
-        paramTypes.push_back(paramTy);
+
+        paramTypes.push_back(
+            paramName == "self" ? (llvm::Type*)cls->getPointerTo() : paramTy);
       }
 
       return llvm::FunctionType::get(returnType, paramTypes, /* varargs */ false);
@@ -401,6 +545,11 @@ class EvaLLVM {
       // save current function.
       auto prevFn = fn;
       auto prevBlock = builder->GetInsertBlock();
+
+      // class methods
+      if (cls != nullptr) {
+        fnName = std::string(cls->getName().data()) + "_" + fnName;
+      }
 
       // override function to compile the body.
       auto newFn = createFunction(fnName, extractFunctionType(fnExp), env);
@@ -572,6 +721,16 @@ class EvaLLVM {
       Eva Parser
     */
     std::unique_ptr<EvaParser> parser;
+
+    /*
+      currently compiling class
+    */
+    llvm::StructType* cls = nullptr;
+
+    /*
+      Class information
+    */
+    std::map<std::string, ClassInfo> classMap_;
 
     /*
       Global Enviroment (symbol table)
