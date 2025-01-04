@@ -16,6 +16,7 @@
 
 #include "./parser/EvaParser.h"
 #include "./Environment.h"
+#include "./Logger.h"
 
 using syntax::EvaParser;
 
@@ -42,6 +43,7 @@ class EvaLLVM {
       moduleInit(); 
       setupExternFunction();
       setupGlobalEnvironment();
+      setupTargetTriple();
     }
 
     /*
@@ -258,6 +260,12 @@ class EvaLLVM {
               auto varNameDec = exp.list[1];
               auto varName = extractVarName(varNameDec);
 
+              // special case for new keyword as it allocates a new variable.
+              if (isNew(exp.list[2])) {
+                auto instance = createInstance(exp.list[2], env, varName);
+                return env->define(varName, instance);
+              }
+
               // init
               auto init = gen(exp.list[2], env);
 
@@ -354,6 +362,12 @@ class EvaLLVM {
               return builder->getInt32(0);
             }
 
+            // object instantiation
+            // (new <class> <args)
+            else if (op == "new") {
+              return createInstance(exp, env, "");
+            } 
+
             // function calls
             else {
               auto callable = gen(exp.list[0], env);
@@ -373,6 +387,61 @@ class EvaLLVM {
 
       // unreachable
       return builder->getInt32(0);
+    }
+
+    /*
+      Creates an instance of a class.
+    */
+    llvm::Value* createInstance(const Exp& exp, Env env, const std::string& name) {
+      auto className = exp.list[1].string;
+      auto cls = getClassByName(className);
+
+      if (cls == nullptr) {
+        DIE << "[EvaLLVM]: Unknown class " << cls;
+      }
+
+      // currently instance allocation is on stack.
+      // TODO: heap allocation
+      // auto instance = name.empty() ? 
+      // builder->CreateAlloca(cls) : builder->CreateAlloca(cls, 0, name);
+
+      // we are going to use malloc here as an external function
+      // to reuse memory allocation a garbage collection
+      auto instance = mallocInstance(cls, name);
+
+      // call constructor after instance has been created
+      auto ctor = module->getFunction(className + "_constructor");
+
+      std::vector<llvm::Value*> args{instance};
+
+      for (auto i = 2; i < exp.list.size(); i++) {
+        args.push_back(gen(exp.list[i], env));
+      }
+
+      builder->CreateCall(ctor, args);
+
+      return instance;
+    }
+
+    /*
+      Allocates an object of given class on the heap.
+    */
+    llvm::Value* mallocInstance(llvm::StructType* cls, const std::string& name) {
+      auto typeSize = builder->getInt64(getTypeSize(cls));
+      
+      // will give us a void*
+      auto mallocPtr = builder->CreateCall(module->getFunction("GC_malloc"), typeSize, name);
+
+      // need to convert pointer to our class pointer type
+      // void* -> Point*
+      return builder->CreatePointerCast(mallocPtr, cls->getPointerTo());
+    }
+
+    /*
+      Returns size of a type in bytes.
+    */
+    size_t getTypeSize(llvm::Type* type_) {
+      return module->getDataLayout().getTypeAllocSize(type_);
     }
 
     /*
@@ -458,6 +527,12 @@ class EvaLLVM {
       (def ...)
     */
     bool isDef(const Exp& exp) { return isTaggedList(exp, "def"); }
+
+    /*
+      to check if list is of object instantiation type.
+      (new ...)
+    */
+    bool isNew(const Exp& exp) { return isTaggedList(exp, "new"); }
 
     /*
       Get a type struct using name.
@@ -627,6 +702,11 @@ class EvaLLVM {
         /* format arg */ bytePtrTy,
         /* var arg */ true
       ));
+
+      // void* malloc(size_t size), void* GC_malloc(size_t size)
+      // size_t is i64
+      module->getOrInsertFunction("GC_malloc", llvm::FunctionType::get(bytePtrTy, builder->getInt64Ty(), 
+                                                                                /* vararg */ false));
     }
 
     /*
@@ -715,6 +795,13 @@ class EvaLLVM {
       }
 
       GlobalEnv = std::make_shared<Environment>(globalRec, nullptr);
+    }
+
+    /*
+      Setup the target triple.
+    */
+    void setupTargetTriple() {
+      module->setTargetTriple("arm64-apple-macosx14.0.0");
     }
 
     /*
