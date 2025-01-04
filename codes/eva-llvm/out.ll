@@ -1,32 +1,31 @@
 ; ModuleID = 'EvaLLVM'
 source_filename = "EvaLLVM"
 
-%Point = type {
-  i32, ; x [0]
-  i32 ; y [1]
-}
+%Point = type { i32, i32 }
 
-define void @Point_constructor(%Point* %self, i32 %x, i32 %y) {
-  
-  ; (set (prop self x) x)
-  %1 = getelementptr %Point, %Point* %self, i32 0, i32 0 ; x address
-  store i32 %x, i32* %1
+@VERSION = global i32 1, align 4
 
-  ; (set (prop self y) y)
-  %2 = getelementptr %Point, %Point* %self, i32 0, i32 1 ; y address
-  store i32 %y, i32* %2
-
-  ret void
-}
+declare i32 @printf(i8*, ...)
 
 define i32 @main() {
-  
-  %p = alloca %Point ; stack allocated TODO: instances need to be heap allocated
+entry:
+  ret i32 0
+}
 
-  call void @Point_constructor(%Point* %p, i32 10, i32 20)
+define i32 @Point_constructor(%Point* %self, i32 %x, i32 %y) {
+entry:
+  %self1 = alloca %Point*, align 8
+  store %Point* %self, %Point** %self1, align 8
+  %x2 = alloca i32, align 4
+  store i32 %x, i32* %x2, align 4
+  %y3 = alloca i32, align 4
+  store i32 %y, i32* %y3, align 4
+  ret i32 0
+}
 
-  %1 = getelementptr %Point, %Point* %p, i32 0, i32 0 ; x address
-  %2 = load i32, i32* %1
-
-  ret i32 %2
+define i32 @Point_calc(%Point* %self) {
+entry:
+  %self1 = alloca %Point*, align 8
+  store %Point* %self, %Point** %self1, align 8
+  ret i32 0
 }
