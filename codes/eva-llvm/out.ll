@@ -1,5 +1,6 @@
 ; ModuleID = 'EvaLLVM'
 source_filename = "EvaLLVM"
+target triple = "arm64-apple-macosx14.0.0"
 
 %Point = type { i32, i32 }
 
@@ -7,8 +8,13 @@ source_filename = "EvaLLVM"
 
 declare i32 @printf(i8*, ...)
 
+declare i8* @GC_malloc(i64)
+
 define i32 @main() {
 entry:
+  %p = call i8* @GC_malloc(i64 8)
+  %0 = bitcast i8* %p to %Point*
+  %1 = call i32 @Point_constructor(%Point* %0, i32 10, i32 20)
   ret i32 0
 }
 

@@ -17,15 +17,18 @@ int main(int argc, char const *argv[])
       (var y 0)
 
       (def constructor (self x y)
-        (begin 0))
+        (begin 
+          0))
           // (set (prop self x) x)
           // (set (prop self y) y)))
 
-      (def calc (self)
+      (def calc (self) 
         0)
         // (+ (prop self x) (prop self y)))
     )
   )
+
+  (var p (new Point 10 20))
 
   )";
 
