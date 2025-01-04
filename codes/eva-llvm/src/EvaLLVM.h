@@ -284,17 +284,37 @@ class EvaLLVM {
               // value
               auto value = gen(exp.list[2], env);
 
-              // get the name of the variable to be updated
-              auto varName = exp.list[1].string;
+              // properties
+              if (isProp(exp.list[1])) {
+                auto instance = gen(exp.list[1].list[1], env);
+                auto fieldName = exp.list[1].list[2].string;
+                auto ptrName = std::string("p") + fieldName;
 
-              // lookup where in the permissible env scope chain can
-              // we find the variable to be updated with
-              auto varBinding = env->lookup(varName);
+                auto cls = (llvm::StructType*)(instance->getType()->getContainedType(0));
 
-              // set the value
-              builder->CreateStore(value, varBinding);
+                auto fieldIdx = getFieldIndex(cls, fieldName);
 
-              return value;
+                auto address = builder->CreateStructGEP(cls, instance, fieldIdx, ptrName);
+
+                builder->CreateStore(value, address);
+
+                return value;
+              }
+              
+              // variables
+              else {
+                // get the name of the variable to be updated
+                auto varName = exp.list[1].string;
+
+                // lookup where in the permissible env scope chain can
+                // we find the variable to be updated with
+                auto varBinding = env->lookup(varName);
+
+                // set the value
+                builder->CreateStore(value, varBinding);
+
+                return value;
+              }
             }
 
             // blocks
@@ -366,7 +386,27 @@ class EvaLLVM {
             // (new <class> <args)
             else if (op == "new") {
               return createInstance(exp, env, "");
-            } 
+            }
+
+            // property of a class access
+            // (prop <instance> <name>)
+            else if (op == "prop") {
+              // instance
+              auto instance = gen(exp.list[1], env);
+              auto fieldName = exp.list[2].string;
+              auto ptrName = std::string("p") + fieldName;
+
+              // instance->getType(): gives us Point*
+              // instance->getType()->getContainedType(): 
+              // get us the dereferenced pointer i.e. Point.
+              auto cls = (llvm::StructType*)instance->getType()->getContainedType(0);
+
+              auto fieldIdx = getFieldIndex(cls, fieldName);
+
+              auto address = builder->CreateStructGEP(cls, instance, fieldIdx, ptrName);
+
+              return builder->CreateLoad(cls->getElementType(fieldIdx), address, fieldName);
+            }
 
             // function calls
             else {
@@ -387,6 +427,15 @@ class EvaLLVM {
 
       // unreachable
       return builder->getInt32(0);
+    }
+
+    /*
+      Returns field index.
+    */
+    size_t getFieldIndex(llvm::StructType* cls, const std::string& fieldName) {
+      auto fields = &classMap_[cls->getName().data()].fieldsMap;
+      auto it = fields->find(fieldName);
+      return std::distance(fields->begin(), it);
     }
 
     /*
@@ -533,6 +582,12 @@ class EvaLLVM {
       (new ...)
     */
     bool isNew(const Exp& exp) { return isTaggedList(exp, "new"); }
+
+    /*
+      to check if the list is of object
+      (prop ...)
+    */
+    bool isProp(const Exp& exp) { return isTaggedList(exp, "prop"); }
 
     /*
       Get a type struct using name.

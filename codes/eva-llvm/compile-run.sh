@@ -13,7 +13,7 @@ clang++ -o eva-llvm.o `llvm-config --cxxflags --ldflags --system-libs --libs cor
 clang++ -O3 -I/opt/homebrew/Cellar/gc/ ./out.ll /opt/homebrew/Cellar/bdw-gc/8.2.8/lib/libgc.a -o ./out.o
 
 # run compiled program
-./out
+./out.o
 
 # print result
 echo $?
