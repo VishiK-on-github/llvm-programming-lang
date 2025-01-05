@@ -29,6 +29,16 @@ struct ClassInfo {
   std::map<std::string, llvm::Function*> methodsMap;
 };
 
+// index of the vTable in the class fields.
+static const size_t VTABLE_INDEX = 0;
+
+/*
+  each class will have a set of reserved fields
+  at the beginning of its layout. currently only
+  vTable is used to resolve the methods.
+*/
+static const size_t RESERVED_FIELDS_COUNT = 1;
+
 // Binary operation macro
 #define GEN_BINARY_OP(Op, varName)            \
   do {                                        \
@@ -435,7 +445,7 @@ class EvaLLVM {
     size_t getFieldIndex(llvm::StructType* cls, const std::string& fieldName) {
       auto fields = &classMap_[cls->getName().data()].fieldsMap;
       auto it = fields->find(fieldName);
-      return std::distance(fields->begin(), it);
+      return std::distance(fields->begin(), it) + RESERVED_FIELDS_COUNT;
     }
 
     /*
@@ -497,7 +507,15 @@ class EvaLLVM {
       Inherits parent class fields.
     */
     void inheritClass(llvm::StructType* cls, llvm::StructType* parent) {
-      // TODO:
+      auto parentClassInfo = &classMap_[parent->getName().data()];
+
+      // inherit the field and method names.
+      classMap_[cls->getName().data()] = {
+        /* class */ cls,
+        /* parent */ parent,
+        /* fields */ parentClassInfo->fieldsMap,
+        /* methods */ parentClassInfo->methodsMap};
+
     }
 
     /*
@@ -543,7 +561,15 @@ class EvaLLVM {
 
       auto classInfo = &classMap_[className];
 
-      auto clsFields = std::vector<llvm::Type*>{};
+      // allocate vTable to set its type in the body.
+      // the table itself is populated later in buildVTable.
+      auto vTableName = className + "_vTable";
+      auto vTableTy = llvm::StructType::create(*ctx, vTableName);
+
+      auto clsFields = std::vector<llvm::Type*>{
+        // first element is always the vTable.
+        vTableTy->getPointerTo(),
+      };
 
       // field types
       for (const auto& fieldInfo : classInfo->fieldsMap) {
@@ -553,9 +579,36 @@ class EvaLLVM {
       cls->setBody(clsFields, /* packed */ false);
 
       // methods:
-      // TODO: using vTables.
-      
+      buildVTable(cls);
     }
+
+    /*
+      create a vTable per class.
+      vTable stores method references 
+      to support inheritance and method overloading.
+    */
+    void buildVTable(llvm::StructType* cls) {
+      std::string className{cls->getName().data()};
+      auto vTableName = className + "_vTable";
+
+      // the vTable should already exists.
+      auto vTableTy = llvm::StructType::getTypeByName(*ctx, vTableName);
+
+      std::vector<llvm::Constant*> vTableMethods;
+      std::vector<llvm::Type*> vTableMethodTys;
+
+      for (auto& methodInfo : classMap_[className].methodsMap) {
+        auto method = methodInfo.second;
+        vTableMethods.push_back(method);
+        vTableMethodTys.push_back(method->getType());
+      }
+
+      vTableTy->setBody(vTableMethodTys);
+
+      auto vTableValue = llvm::ConstantStruct::get(vTableTy, vTableMethods);
+      createGlobalVar(vTableName, vTableValue);
+    }
+
 
     /*
       Tagged list
