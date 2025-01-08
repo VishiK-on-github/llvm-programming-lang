@@ -470,7 +470,7 @@ class EvaLLVM {
 
               auto argIdx = 0;
 
-              for (auto i = 1; i < exp.list.size(); i++) {
+              for (auto i = 1; i < exp.list.size(); i++, argIdx++) {
                 auto argValue = gen(exp.list[i], env);
 
                 auto paramTy = fn->getArg(argIdx)->getType();
