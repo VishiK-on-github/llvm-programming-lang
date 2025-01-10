@@ -10,54 +10,30 @@ int main(int argc, char const *argv[])
   // program to execute
   std::string program = R"(
 
-  (class Point null
+  // functors - callable objects
+
+  (class Transformer null
     (begin
 
-      (var x 0)
-      (var y 0)
+      (var factor 5)
 
-      (def constructor (self x y)
+      (def constructor (self factor) -> Transformer
         (begin
-          (set (prop self x) x)
-          (set (prop self y) y)))
+          (set (prop self factor) factor)
+          self))
 
-      (def calc (self)
-        (printf "Point.calc is called !\n")
-        (+ (prop self x) (prop self y)))
+      (def __call__ (self v)
+        (* (prop self factor) v))
     )
   )
 
-  (class Point3D Point
-    (begin
+  (var transform (new Transformer 5))
+  (printf "(transform 10) = %d\n" (transform 10))
 
-      (var z 100)
+  (def calculate (x (modify Transformer))
+    (modify x))
 
-      (def constructor (self x y z)
-        (begin
-          ((method (super Point3D) constructor) self x y)
-          (set (prop self z) z)))
-
-      (def calc (self)
-        (printf "Point3D.calc is called !\n")
-        (+ ((method (super Point3D) calc) self) (prop self z)))
-
-  ))
-
-  (var p1 (new Point 10 20))
-  (var p2 (new Point3D 100 200 300))
-
-  (printf "p2.x = %d\n" (prop p2 x))
-  (printf "p2.y = %d\n" (prop p2 y))
-  (printf "p2.z = %d\n" (prop p2 z))
-
-  (printf "Point3D.calc result = %d\n" ((method p2 calc) p2))
-
-  (def check ((obj Point))
-    (begin
-      ((method obj calc) obj)))
-
-  (check p1) // Point.calc
-  (check p2) // Point3D.calc
+  (printf "(calculate 10 transform) = %d\n" (calculate 10 transform))
 
   )";
 
