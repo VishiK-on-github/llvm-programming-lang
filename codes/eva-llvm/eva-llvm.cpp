@@ -11,29 +11,45 @@ int main(int argc, char const *argv[])
   std::string program = R"(
 
   // functors - callable objects
+  // closures
 
-  (class Transformer null
+  (class Cell null
     (begin
 
-      (var factor 5)
+      (var value 0)
 
-      (def constructor (self factor) -> Transformer
+      (def constructor (self value) -> Cell
         (begin
-          (set (prop self factor) factor)
+          (set (prop self value) value)
           self))
+      
+    ))
 
-      (def __call__ (self v)
-        (* (prop self factor) v))
+    (class SetFunctor null
+      (begin
+
+        (var (cell Cell) 0)
+
+        (def constructor (self (cell Cell)) -> SetFunctor
+          (begin
+            (set (prop self cell) cell)
+            self))
+
+        (def __call__ (self value)
+          (begin
+            (set (prop (prop self cell) value) value)
+            value))
+      )
     )
-  )
 
-  (var transform (new Transformer 5))
-  (printf "(transform 10) = %d\n" (transform 10))
+    (var n (new Cell 10))
 
-  (def calculate (x (modify Transformer))
-    (modify x))
+    (var setN (new SetFunctor n))
+    (var getN (new GetFunctor n))
 
-  (printf "(calculate 10 transform) = %d\n" (calculate 10 transform))
+    (printf "getN.__call__ result = %d\n" (getN))
+    (printf "setN.__call__ result = %d\n" (setN 20))
+    (printf "getN.__call__ result = %d\n" (getN))
 
   )";
 
