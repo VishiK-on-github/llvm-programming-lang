@@ -3,55 +3,48 @@
 */
 
 #include <string>
+#include <iostream>
+#include <fstream>
+
 #include "./src/EvaLLVM.h"
 
+void printHelp() {
+  std::cout << "\nUsage: eva-llvm [option]\n\n"
+            << "Options:\n"
+            << "    -e, --expression  Expression to parse\n"
+            << "    -f, --file        File to parse\n\n";
+}
+
 int main(int argc, char const *argv[])
-{
+{ 
+
+  if (argc != 3) {
+    printHelp();
+    return 0;
+  }
+
+  // expression mode
+  std::string mode = argv[1];
+
   // program to execute
-  std::string program = R"(
+  std::string program;
 
-  // functors - callable objects
-  // closures
+  // simple expression
+  if (mode == "-e") {
+    program = argv[2];
+  }
 
-  (class Cell null
-    (begin
+  /*
+    eva file
+  */
+  else if (mode == "-f") {
+    std::ifstream programFile(argv[2]);
+    std::stringstream buffer;
+    buffer << programFile.rdbuf() << "\n";
 
-      (var value 0)
-
-      (def constructor (self value) -> Cell
-        (begin
-          (set (prop self value) value)
-          self))
-      
-    ))
-
-    (class SetFunctor null
-      (begin
-
-        (var (cell Cell) 0)
-
-        (def constructor (self (cell Cell)) -> SetFunctor
-          (begin
-            (set (prop self cell) cell)
-            self))
-
-        (def __call__ (self value)
-          (begin
-            (set (prop (prop self cell) value) value)
-            value))
-      )
-    )
-
-    (var n (new Cell 10))
-
-    (var setN (new SetFunctor n))
-    (var getN (new GetFunctor n))
-
-    (printf "getN.__call__ result = %d\n" (getN))
-    (printf "setN.__call__ result = %d\n" (setN 20))
-    (printf "getN.__call__ result = %d\n" (getN))
-
-  )";
+    // program
+    program = buffer.str();
+  }
 
   // compiler instance
   EvaLLVM vm;
