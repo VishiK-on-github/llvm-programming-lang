@@ -72,7 +72,7 @@ class EvaLLVM {
       std::cout << "\n";
 
       // 3. save IR to file.
-      saveModuleToFile("./out.ll");
+      saveModuleToFile("./bin/out.ll");
     }
 
   private:
