@@ -797,8 +797,8 @@ class EvaLLVM {
         return builder->getInt8Ty()->getPointerTo();
       }
 
-      // default:
-      return builder->getInt32Ty();
+      // class
+      return classMap_[type_].cls->getPointerTo();
     }
 
     /*
