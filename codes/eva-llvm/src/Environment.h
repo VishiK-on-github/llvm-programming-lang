@@ -35,7 +35,7 @@ private:
         }
 
         if (parent_ == nullptr) {
-            DIE << "Variable \"" << name << "\" is not defined.";
+            DIE << "Variable \"" << name << "\" is not defined." << std::endl;
         }
 
         return parent_->resolve(name);

@@ -20,8 +20,9 @@ Instruction to iterate in an array:
 
 For string "Hello, World!", the representation looks as follows:
 
-`@str = global [15 * i8] c"Hello, World!\0A\00"
-%px = getelementptr [15 * i8], [15 * i8]* @str, i32 0, i32 2` -> this will point to char "l".
+`@str = global [15 * i8] c"Hello, World!\0A\00"`
+
+`%px = getelementptr [15 * i8], [15 * i8]* @str, i32 0, i32 2` -> this will point to char "l".
 
 For the class Point with two variables. The class will be represented with struct types.
 

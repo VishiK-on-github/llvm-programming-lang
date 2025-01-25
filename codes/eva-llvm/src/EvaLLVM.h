@@ -23,10 +23,10 @@ using syntax::EvaParser;
 using Env = std::shared_ptr<Environment>;
 
 struct ClassInfo {
-  llvm::StructType* cls;
-  llvm::StructType* parent;
-  std::map<std::string, llvm::Type*> fieldsMap;
-  std::map<std::string, llvm::Function*> methodsMap;
+  llvm::StructType* cls; // the current class
+  llvm::StructType* parent; // the parent class incase the base class inherits another class
+  std::map<std::string, llvm::Type*> fieldsMap; // the fields described in the current class
+  std::map<std::string, llvm::Function*> methodsMap; // the methods described in the current class
 };
 
 // index of the vTable in the class fields.
@@ -40,6 +40,8 @@ static const size_t VTABLE_INDEX = 0;
 static const size_t RESERVED_FIELDS_COUNT = 1;
 
 // Binary operation macro
+// builder->Op exposes arithmetic, memory
+// and logical operations through the IR Builder
 #define GEN_BINARY_OP(Op, varName)            \
   do {                                        \
       auto op1 = gen(exp.list[1], env);       \
@@ -50,7 +52,7 @@ static const size_t RESERVED_FIELDS_COUNT = 1;
 class EvaLLVM {
   public:
     EvaLLVM() : parser(std::make_unique<EvaParser>()) { 
-      moduleInit(); 
+      moduleInit();
       setupExternFunction();
       setupGlobalEnvironment();
       setupTargetTriple();
@@ -85,7 +87,7 @@ class EvaLLVM {
                           llvm::FunctionType::get(/* return type */ builder->getInt32Ty(),
                                                   /* vararg */ false), GlobalEnv);
 
-      // global variables
+      // setting version global variable
       createGlobalVar("VERSION", builder->getInt32(1));
 
       // 2. compile the main body
@@ -100,17 +102,23 @@ class EvaLLVM {
     llvm::Value* gen(const Exp& exp, Env env) { 
       
       switch (exp.type) {
-        // boolean
-        case ExpType::SYMBOL:
+
+        case ExpType::SYMBOL: {
+          // checking if expression is a boolean or not
           if (exp.string == "true" || exp.string == "false") {
             return builder->getInt1(exp.string == "true" ? true : false);
-          } else {
+          } 
+          else {
             // variables
             auto varName = exp.string;
             auto value = env->lookup(varName);
 
-            // TODO: local variables
+            // local variables
+            // we check if "value" is of type llvm::AllocaInst i.e. is it allocated on the stack
+            // if yes then we get pointer to llvm::AllocaInst type else a null pointer
             if (auto localVar = llvm::dyn_cast<llvm::AllocaInst>(value)) {
+              // if casting is successful, we try to create load instruction
+              // to keep the variable on the stack
               return builder->CreateLoad(localVar->getAllocatedType(), localVar, varName.c_str());
             }
 
@@ -125,9 +133,11 @@ class EvaLLVM {
               return value;
             }
           }
-
+        }
         // numbers
         case ExpType::NUMBER:
+          // we create instruction to get an integer of i32 type
+          // where the value is exp.number
           return builder->getInt32(exp.number);
 
         // strings
@@ -135,6 +145,8 @@ class EvaLLVM {
           auto re = std::regex("\\\\n");
           auto str = std::regex_replace(exp.string, re, "\n");
 
+          // CreateGlobalStringPtr: is used to create a string constant
+          // in the global scope of the program
           return builder->CreateGlobalStringPtr(str);
         }
 
@@ -142,6 +154,7 @@ class EvaLLVM {
         case ExpType::LIST:
           auto tag = exp.list[0];
 
+          // if we have + - * /
           if (tag.type == ExpType::SYMBOL) {
             auto op = tag.string;
             
@@ -267,6 +280,7 @@ class EvaLLVM {
                 return builder->getInt32(0);
               }
               
+              // getting name from the declaration
               auto varNameDec = exp.list[1];
               auto varName = extractVarName(varNameDec);
 
@@ -296,16 +310,21 @@ class EvaLLVM {
 
               // properties
               if (isProp(exp.list[1])) {
-                auto instance = gen(exp.list[1].list[1], env);
-                auto fieldName = exp.list[1].list[2].string;
-                auto ptrName = std::string("p") + fieldName;
+                auto instance = gen(exp.list[1].list[1], env); // we get instance of the class
+                auto fieldName = exp.list[1].list[2].string; // we get field within the class whose value is to be modified
+                auto ptrName = std::string("p") + fieldName; // we give a name to the field inside the class
 
-                auto cls = (llvm::StructType*)(instance->getType()->getContainedType(0));
+                auto cls = (llvm::StructType*)(instance->getType()->getContainedType(0)); // we get a pointer to the instance
 
+                // we get the offset factor from the start of the struct location
                 auto fieldIdx = getFieldIndex(cls, fieldName);
-
+                
+                // we offset from the starting location of the struct 
+                // pointer to point to where the field is stored on the heap
                 auto address = builder->CreateStructGEP(cls, instance, fieldIdx, ptrName);
 
+                // we store the actual value using value
+                // and address contains a pointer to where the value must be stored
                 builder->CreateStore(value, address);
 
                 return value;
@@ -348,10 +367,12 @@ class EvaLLVM {
               // args:
               std::vector<llvm::Value*> args{};
 
+              // gather the args
               for (auto i = 1; i < exp.list.size(); i++) {
                 args.push_back(gen(exp.list[i], env));
               }
 
+              // invoke the printf function with the array of collected args
               return builder->CreateCall(printfFn, args);
             }
 
@@ -429,17 +450,18 @@ class EvaLLVM {
 
               // (method (super <class>) <name>)
               if (isSuper(exp.list[1])) {
-                auto className = exp.list[1].list[1].string;
-                cls = classMap_[className].parent;
-                auto parentName = std::string{cls->getName().data()};
-                vTable = module->getNamedGlobal(parentName + "_vTable");
-                vTableTy = llvm::StructType::getTypeByName(*ctx, parentName + "_vTable");
+                auto className = exp.list[1].list[1].string; // get class name
+                cls = classMap_[className].parent; // get the parent class of current class from classMap
+                auto parentName = std::string{cls->getName().data()}; // get parent classes name
+                vTable = module->getNamedGlobal(parentName + "_vTable"); // get the vTable associated with the parent class
+                vTableTy = llvm::StructType::getTypeByName(*ctx, parentName + "_vTable"); // used to get layout of fn pointers of the parent class
               }
 
               else {
                 // instance
                 auto instance = gen(exp.list[1], env);
 
+                // get struct pointer to the class
                 cls = (llvm::StructType*)(instance->getType()->getContainedType(0));
 
                 // load vTable
@@ -450,13 +472,15 @@ class EvaLLVM {
                 vTableTy = (llvm::StructType*)(vTable->getType()->getContainedType(0));
               }
 
-              // load methods from the vTable
+              // get offset from vTable start to our desired method name
               auto methodIdx = getMethodIndex(cls, methodName);
 
+              // get the type of the method from our vTable
               auto methodTy = (llvm::FunctionType*)vTableTy->getElementType(methodIdx);
 
+              // get the address of th method using GEP instruction
               auto methodAddr = builder->CreateStructGEP(vTableTy, vTable, methodIdx);
-
+              
               return builder->CreateLoad(methodTy, methodAddr);
             }
 
@@ -637,24 +661,28 @@ class EvaLLVM {
 
       // body block
       auto body = clsExp.list[3];
-
+      
+      // iterate over the statements in the body block
       for (auto i = 1; i < body.list.size(); i++) {
         auto exp = body.list[i];
 
+        // check if it is a variable assignment statement
         if (isVar(exp)) {
 
           auto varNameDecl = exp.list[1];
 
-          auto fieldName = extractVarName(varNameDecl);
-          auto fieldTy = extractVarType(varNameDecl);
+          auto fieldName = extractVarName(varNameDecl); // get name of the variable
+          auto fieldTy = extractVarType(varNameDecl); // get variable type
 
-          classInfo->fieldsMap[fieldName] = fieldTy;
+          classInfo->fieldsMap[fieldName] = fieldTy; // add the field into the class's field map
         } 
         
+        // check if it is a method declaration
         else if (isDef(exp)) {
-          auto methodName = exp.list[1].string;
-          auto fnName = className + "_" + methodName;
+          auto methodName = exp.list[1].string; // get the method name
+          auto fnName = className + "_" + methodName; // to maintain uniqueness across classes use cls name + fn name
 
+          // add the method definition into the classes method map
           classInfo->methodsMap[methodName] = createFunctionProto(fnName, extractFunctionType(exp), env);
         }
       }
@@ -698,15 +726,17 @@ class EvaLLVM {
       to support inheritance and method overloading.
     */
     void buildVTable(llvm::StructType* cls) {
-      std::string className{cls->getName().data()};
-      auto vTableName = className + "_vTable";
+      std::string className{cls->getName().data()}; // get the class name
+      auto vTableName = className + "_vTable"; // set the vTable name for the class
 
       // the vTable should already exists.
       auto vTableTy = llvm::StructType::getTypeByName(*ctx, vTableName);
 
+      // create vTable methods and method types
       std::vector<llvm::Constant*> vTableMethods;
       std::vector<llvm::Type*> vTableMethodTys;
 
+      // iterate over the methods in a class and collect methods and method types
       for (auto& methodInfo : classMap_[className].methodsMap) {
         auto method = methodInfo.second;
         vTableMethods.push_back(method);
@@ -820,10 +850,12 @@ class EvaLLVM {
       // param types
       std::vector<llvm::Type*> paramTypes{};
 
+      // collect the args for a fn
       for (auto& param : params.list) {
         auto paramName = extractVarName(param);
         auto paramTy = extractVarType(param);
 
+        // if self add a pointer to the class itself
         paramTypes.push_back(
             paramName == "self" ? (llvm::Type*)cls->getPointerTo() : paramTy);
       }
